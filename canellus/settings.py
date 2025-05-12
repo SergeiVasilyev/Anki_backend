@@ -31,6 +31,11 @@ DEBUG = os.getenv('DEBUG')
 
 ALLOWED_HOSTS = ['*']
 
+CSRF_TRUSTED_ORIGINS = [
+    'http://127.0.0.1:8880',
+    'http://localhost:8880',
+]
+
 AUTH_USER_MODEL = "anki_quiz.CustomUser"
 
 
