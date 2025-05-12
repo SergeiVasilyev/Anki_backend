@@ -19,3 +19,4 @@ typing_extensions==4.13.2
 tzdata==2025.2
 uvicorn==0.34.2
 gunicorn
+git-filter-repo

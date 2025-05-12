@@ -91,10 +91,10 @@ ASGI_APPLICATION = 'canellus.asgi.application'
 
 DATABASES = {
      'default': {
-         'ENGINE': 'django.db.backends.postgresql',
+         'ENGINE': os.getenv('DATABASE_ENGINE'),
          'HOST': os.getenv('DATABASE_HOST'), # db
-         'PORT': os.getenv('PORT'),
-         'USER': os.getenv('DATABASE_USER'),
+         'PORT': os.getenv('DATABASE_PORT'),
+         'USER': os.getenv('DATABASE_USERNAME'),
          'PASSWORD': os.getenv('DATABASE_PASSWORD'),
          'NAME': os.getenv('DATABASE_NAME'),
      }
