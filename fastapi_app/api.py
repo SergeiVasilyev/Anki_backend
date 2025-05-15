@@ -6,6 +6,7 @@ from anki_quiz.serializers import CardSerializer, UserSerializer, SetSerializer
 from asgiref.sync import sync_to_async
 from django.contrib.auth.hashers import check_password
 from typing import Dict, Any
+from datetime import datetime, timezone
 
 api_app = FastAPI()
 
@@ -156,13 +157,20 @@ async def create_set(request: Request, response: Response):
 
 
 @api_app.get("/get-sets/")
-async def get_sets(request: Request, response: Response):
+async def get_sets(request: Request, response: Response, since: str = '1999-01-01T00:00:00'):
+    print(request.state.user, since)
     user = request.state.user
     response.status_code = 400
 
+    try:
+        since = datetime.strptime(since, '%Y-%m-%dT%H:%M:%S').astimezone(timezone.utc)
+    except ValueError:
+        return {"success": False, "error": "Invalid since parameter"}
+    
+
     if user:
         try:
-            sets = await sync_to_async(list)(Set.objects.filter(user=user))
+            sets = await sync_to_async(list)(Set.objects.filter(user=user).filter(created_at__gt=since))
             response.status_code = 200
             return {"success": True, "sets": [await sync_to_async(SetSerializer.serialize_set)(set) for set in sets]}
         except Exception as e:
