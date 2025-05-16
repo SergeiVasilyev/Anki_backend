@@ -1,5 +1,5 @@
 import re
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.responses import JSONResponse
 from anki_quiz.models import CustomUser, Set, Card
 from anki_quiz.serializers import CardSerializer, UserSerializer, SetSerializer
@@ -157,16 +157,33 @@ async def create_set(request: Request, response: Response):
 
 
 @api_app.get("/get-sets/")
-async def get_sets(request: Request, response: Response, since: str = '1999-01-01T00:00:00'):
+async def get_sets(
+        request: Request, 
+        response: Response, 
+        since: str = '1999-01-01T00:00:00',
+        skip: int = Query(0, ge=0, description="Number of items to skip"),
+        limit: int = Query(100, ge=1, le=1000, description="Maximum number of items to return")   
+    ):
+
     print(request.state.user, since)
     user = request.state.user
     response.status_code = 400
     
     if user:
         try:
-            sets = await sync_to_async(list)(Set.objects.filter(user=user).filter(created_at__gt=since))
+            sets_query = Set.objects.filter(user=user).filter(created_at__gt=since).order_by('-created_at')[skip:skip+limit]
+            sets = await sync_to_async(list)(sets_query)
+
+            # sets = await sync_to_async(list)(Set.objects.filter(user=user).filter(created_at__gt=since))
             response.status_code = 200
-            return {"success": True, "sets": [await sync_to_async(SetSerializer.serialize_set)(set) for set in sets]}
+            return {"success": True, 
+                    "sets": [await sync_to_async(SetSerializer.serialize_set)(set) for set in sets], 
+                    "pagination": {
+                    "skip": skip,
+                    "limit": limit,
+                    "count": len(sets)
+                }
+            }
         except Exception as e:
             print('Get sets error:', e)
             return {"success": False, "error": "Error getting sets, user not found"}
