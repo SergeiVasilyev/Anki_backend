@@ -161,13 +161,7 @@ async def get_sets(request: Request, response: Response, since: str = '1999-01-0
     print(request.state.user, since)
     user = request.state.user
     response.status_code = 400
-
-    try:
-        since = datetime.strptime(since, '%Y-%m-%dT%H:%M:%S').astimezone(timezone.utc)
-    except ValueError:
-        return {"success": False, "error": "Invalid since parameter"}
     
-
     if user:
         try:
             sets = await sync_to_async(list)(Set.objects.filter(user=user).filter(created_at__gt=since))
