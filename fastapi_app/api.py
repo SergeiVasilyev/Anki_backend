@@ -171,22 +171,27 @@ async def get_sets(
     
     if user:
         try:
-            sets_query = Set.objects.filter(user=user).filter(created_at__gt=since).order_by('-created_at')[skip:skip+limit]
+            sets_query = Set.objects.filter(user=user).filter(created_at__gt=since).order_by('-created_at')[skip:skip+limit+1] # прибавляем 1, чтобы узнать, есть ли еще данные
             sets = await sync_to_async(list)(sets_query)
 
-            # sets = await sync_to_async(list)(Set.objects.filter(user=user).filter(created_at__gt=since))
+            # Проверяем, есть ли еще данные
+            has_more = len(sets) > limit
+            if has_more:
+                sets = sets[:limit]  # Обрезаем лишнее
+
             response.status_code = 200
             return {"success": True, 
                     "sets": [await sync_to_async(SetSerializer.serialize_set)(set) for set in sets], 
                     "pagination": {
                     "skip": skip,
                     "limit": limit,
-                    "count": len(sets)
+                    "count": len(sets),
+                    "has_more": has_more
                 }
             }
         except Exception as e:
             print('Get sets error:', e)
-            return {"success": False, "error": "Error getting sets, user not found"}
+            return {"success": False, "error": "Error getting sets"}
 
     return {"success": False, "error": "User not found"}
 
