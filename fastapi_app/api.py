@@ -271,14 +271,14 @@ async def create_card(request: Request, response: Response):
 
     return {"success": False, "error": "User not found"}
 
-@api_app.get("/get-cards/")
-async def get_cards(request: Request, response: Response):
+@api_app.get("/get-cards/{set_id}/")
+async def get_cards(request: Request, response: Response, set_id: int):
     user = request.state.user
     response.status_code = 400
 
     if user:
         try:
-            cards = await sync_to_async(list)(Card.objects.filter(set__user=user))
+            cards = await sync_to_async(list)(Card.objects.filter(set__user=user, set__id=set_id))
             response.status_code = 200
             return {"success": True, "cards": [await sync_to_async(CardSerializer.serialize_card)(card) for card in cards]}
         except Exception as e:
