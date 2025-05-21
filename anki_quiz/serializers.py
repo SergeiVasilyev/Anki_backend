@@ -32,6 +32,8 @@ class SetSerializer:
             'definition_lang': card_set.definition_lang,
             'created_at': card_set.created_at.isoformat(),
             'is_public': card_set.is_public,
+            # 'cards': [CardSerializer.serialize_card(card) for card in card_set.cards.all()],
+            'user': card_set.user.id
         }
 
 
