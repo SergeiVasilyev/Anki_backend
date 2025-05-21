@@ -1,12 +1,15 @@
 import re
-from fastapi import FastAPI, Query, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from anki_quiz.models import CustomUser, Set, Card
 from anki_quiz.serializers import CardSerializer, UserSerializer, SetSerializer
 from asgiref.sync import sync_to_async
 from django.contrib.auth.hashers import check_password
+from django.db import transaction
 from typing import Dict, Any
 from datetime import datetime, timezone
+from typing import List, Union
+from functools import wraps
 
 api_app = FastAPI()
 
@@ -138,6 +141,8 @@ async def check_auth(request: Request, response: Response):
 # ------------------End Authentication---------------
 
 
+# ------------------Sets------------------
+
 @api_app.post("/create-set/")
 async def create_set(request: Request, response: Response):
     data = await request.json()
@@ -165,7 +170,6 @@ async def get_sets(
         limit: int = Query(100, ge=1, le=1000, description="Maximum number of items to return")   
     ):
 
-    print(request.state.user, since)
     user = request.state.user
     response.status_code = 400
     
@@ -253,6 +257,119 @@ async def delete_set(request: Request, response: Response, set_id: int):
     return {"success": False, "error": "User not found"}
 
 
+# -------------------End of Sets-------------------
+
+
+#--------------------Cards routes--------------------
+
+@api_app.get("/get-cards/{set_id}/")
+async def get_cards(request: Request, response: Response, set_id: int):
+    user = request.state.user
+    response.status_code = 400
+
+    if user:
+        try:
+            cards = await sync_to_async(list)(Card.objects.filter(set__user=user, set__id=set_id))
+            response.status_code = 200
+            return {"success": True, "cards": [await sync_to_async(CardSerializer.serialize_card)(card) for card in cards]}
+        except Exception as e:
+            print('Get cards error:', e)
+            return {"success": False, "error": "Error getting cards, user not found"}
+
+    return {"success": False, "error": "User not found"}
+
+
+
+
+
+
+
+# Декоратор для синхронных Django ORM операций
+def django_db_sync_to_async(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        return await sync_to_async(func)(*args, **kwargs)
+    return wrapper
+
+@django_db_sync_to_async
+def check_set_exists(set_id: int, user_id: int) -> bool:
+    return Set.objects.filter(id=set_id, user_id=user_id).exists()
+
+@django_db_sync_to_async
+def process_cards_in_transaction(set_id: int, cards_data: List[dict]) -> List[Card]:
+    with transaction.atomic():
+        results = []
+        for card_data in cards_data:
+            card_id = card_data.get('id')
+            if card_id:
+                # Обновление существующей карточки
+                card = Card.objects.filter(id=card_id, set_id=set_id).first()
+                if not card:
+                    raise ValueError(f"Card with ID {card_id} not found")
+                
+                card.term = card_data.get('term', card.term)
+                card.definition = card_data.get('definition', card.definition)
+                card.image_url = card_data.get('image_url', card.image_url)
+                card.audio_url = card_data.get('audio_url', card.audio_url)
+                card.save()
+            else:
+                # Создание новой карточки
+                card = Card.objects.create(
+                    set_id=set_id,
+                    term=card_data['term'],
+                    definition=card_data['definition'],
+                    image_url=card_data.get('image_url'),
+                    audio_url=card_data.get('audio_url')
+                )
+            results.append(card)
+        return results
+
+@django_db_sync_to_async
+def serialize_cards(cards: List[Card]) -> List[dict]:
+    return [CardSerializer.serialize_card(card) for card in cards]
+
+@api_app.post("/create-update-cards/{set_id}/", status_code=200)
+async def create_update_cards(
+    request: Request,
+    set_id: int,
+    response: Response
+):
+    try:
+        # Проверка существования набора
+        if not await check_set_exists(set_id, request.state.user.id):
+            response.status_code = 404
+            return {"success": False, "error": "Set not found"}
+
+        data = await request.json()
+        if not data.get('cards'):
+            response.status_code = 400
+            return {"success": False, "error": "No cards provided"}
+
+        # Обработка карточек в транзакции
+        cards = await process_cards_in_transaction(set_id, data['cards'])
+        
+        # Сериализация результатов
+        serialized_cards = await serialize_cards(cards)
+        
+        return {
+            "success": True,
+            "cards": serialized_cards
+        }
+
+    except ValueError as e:
+        response.status_code = 404
+        return {"success": False, "error": str(e)}
+    except Exception as e:
+        response.status_code = 400
+        return {"success": False, "error": f"Processing error: {str(e)}"}
+
+
+
+    
+
+
+
+
 @api_app.post("/create-card/")
 async def create_card(request: Request, response: Response):
     data = await request.json()
@@ -271,21 +388,7 @@ async def create_card(request: Request, response: Response):
 
     return {"success": False, "error": "User not found"}
 
-@api_app.get("/get-cards/{set_id}/")
-async def get_cards(request: Request, response: Response, set_id: int):
-    user = request.state.user
-    response.status_code = 400
 
-    if user:
-        try:
-            cards = await sync_to_async(list)(Card.objects.filter(set__user=user, set__id=set_id))
-            response.status_code = 200
-            return {"success": True, "cards": [await sync_to_async(CardSerializer.serialize_card)(card) for card in cards]}
-        except Exception as e:
-            print('Get cards error:', e)
-            return {"success": False, "error": "Error getting cards, user not found"}
-
-    return {"success": False, "error": "User not found"}
 
 @api_app.get("/get-card/{card_id}/")
 async def get_card(request: Request, response: Response, card_id: int):
